@@ -1,23 +1,24 @@
-load "../json";
+load web.json
 
 data = { 
-	"module":               (any)"DaoJSON", 
-	"descriptioin":         "JSON serializer/parser",
-	"external dependences": none,
-	"classes":              0,
-	"methods":              { "serialize", "deserialize" }, 
-	"Dao => JSON mapping":  { 
-	"map<string, any>": "object",
-	"list<any>":        "array",
-	"string":           "string",
-	"int/float/double": "number",
-	"none":             "null"
+	"module" =>               (any)"DaoJSON", 
+	"descriptioin" =>         "JSON serializer/parser",
+	"external dependences" => none,
+	"classes" =>              0,
+	"methods" =>              { "serialize", "deserialize" }, 
+	"Dao => JSON mapping" =>  { 
+	"map<string, any>" => "object",
+	"list<any>" =>        "array",
+	"string" =>           "string",
+	"int/float/double" => "number",
+	"enum<false:true>" => "bool",
+	"none" =>             "null"
     } 
 };
 
-text = data.toJSON();
+text = json.serialize(data);
 io.writeln("Dao => JSON (readable):\n", text);
-io.writeln("\nDao => JSON (compact):\n", data.toJSON($compact));
+io.writeln("\nDao => JSON (compact):\n", json.serialize(data, $compact));
 
-data2 = text.parseJSON();
+data2 = json.parse(text);
 io.writeln("\nJSON => Dao:\n", data2);

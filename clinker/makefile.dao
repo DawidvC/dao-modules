@@ -1,0 +1,38 @@
+
+daovm  = DaoMake::FindPackage( "Dao", $REQUIRED )
+
+if( daovm == none ) return
+
+project = DaoMake::Project( "DaoClinker" ) 
+project.UseImportLibrary( daovm, "dao" )
+
+
+ffi = DaoMake::FindPackage( "FFI2", $OPTIONAL )
+if( ffi ){
+	project.UseImportLibrary( ffi, "FFI" )
+}else{
+	project.AddDirectory( "libffi", "libffi" )
+	ffi = DaoMake::FindPackage( "FFI", $REQUIRED )
+	project.UseStaticLibrary( ffi, "ffi" )
+}
+
+project.AddIncludePath( "." )
+project.AddIncludePath( "../../kernel" )
+project.SetTargetPath( "../../lib/dao/modules" )
+
+clinker_objs = project.AddObjects( { "dao_clinker.c" } )
+clinker_dll = project.AddSharedLibrary( "dao_clinker", clinker_objs )
+
+sample_objs = project.AddObjects( { "sample.c" } )
+sample_dll = project.AddSharedLibrary( "sample", sample_objs )
+
+sample_dll.SetTargetPath( "../../lib/dao/modules/clinker" )
+
+
+project.GenerateFinder( $TRUE );
+project.Install( daovm.GetPath( "MOD-PATH" ), clinker_dll );
+
+daovm_doc_path = daovm.GetPath( "DOC-PATH" );
+demos = { "sample.dao", "sample.c" }
+project.Install( DaoMake::MakePath( daovm_doc_path, "./demo/modules/clinker" ), demos )
+project.Install( DaoMake::MakePath( daovm_doc_path, "./demo/modules/clinker" ), sample_dll )

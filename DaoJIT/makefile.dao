@@ -2,17 +2,17 @@
 project = DaoMake::Project( "DaoJIT" ) 
 
 daovm = DaoMake::FindPackage( "Dao", $REQUIRED )
-llvm  = DaoMake::FindPackage( "LLVM", $REQUIRED )
+llvm  = DaoMake::FindPackage( "LLVM", $OPTIONAL )
 
 if( daovm == none || llvm == none ) return
 
-project.UseSharedLibrary( daovm, "dao" )
+project.UseImportLibrary( daovm, "dao" )
 project.UseSharedLibrary( llvm )
 
 project_objs = project.AddObjects( { "daoJIT.cpp" }, { "daoJIT.h" } )
 project_objs.AddCompilingFlag( "-fno-rtti" );
 
-project_dll = project.AddSharedLibrary( "DaoJIT", project_objs )
+project_dll = project.AddSharedLibrary( "dao_jit", project_objs )
 
 
 project.GenerateFinder( $TRUE );

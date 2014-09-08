@@ -31,11 +31,11 @@
 #include "llvm/Module.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/Instructions.h"
-#include "llvm/Support/IRBuilder.h"
+#include "llvm/IRBuilder.h"
 
 
 extern "C"{
-#include"daoArray.h"
+#include"daoList.h"
 #include"daoVmcode.h"
 #include"daoValue.h"
 #include"daoRoutine.h"

@@ -1,0 +1,201 @@
+
+load os.fs
+
+const dao_zip_header = "\33DaoAchive\2\0\r\n"
+
+# Simple Archive format for the Dao packaging tool.
+class Archive
+{
+	# Do not use string here:
+	# The string content could easily become dozens of megabytes,
+	# with implicit sharing and copying of strings, the memory
+	# consumption could easily multiply, reaching hundreds of megabytes.
+	var  buffers = { dao_zip_header, "0000" }
+	var  tops = {}
+
+	routine Add( path: string )
+
+	routine GetBuffer(){
+		count = %tops
+		buffers[1][0] = (count >> 24) & 0xff
+		buffers[1][1] = (count >> 16) & 0xff
+		buffers[1][2] = (count >> 8) & 0xff
+		buffers[1][3] = count & 0xff
+		return buffers.sum()
+	}
+
+	static routine Extract( buffer: string, dest: string )
+
+private
+	static routine EncodeAccess( access: string )
+	static routine DecodeAccess( code: int )
+
+	routine EncodeInt8( value: int )
+	routine EncodeInt16( value: int )
+	routine EncodeInt32( value: int )
+	routine EncodeString( data: string )
+
+	routine EncodeFile( entry: fs::file, depth = 1 )
+	routine EncodeDir( entry: fs::dir, depth = 1 )
+
+	routine AddFile( path: string, depth = 1 )
+	routine AddDir( path: string, depth = 1 )
+}
+
+static routine Archive::EncodeAccess( access: string )
+{
+	code = 0
+	if( access.find( "r" ) >=0 ) code |= 0x1
+	if( access.find( "w" ) >=0 ) code |= 0x2
+	if( access.find( "x" ) >=0 ) code |= 0x4
+	return code
+}
+static routine Archive::DecodeAccess( code: int )
+{
+	access = ""
+	if( code & 0x1 ) access += "r"
+	if( code & 0x2 ) access += "w"
+	if( code & 0x4 ) access += "x"
+	return access;
+}
+routine Archive::EncodeInt8( value: int )
+{
+	buffers.append( string( 1, value ) )
+}
+routine Archive::EncodeInt16( value: int )
+{
+	temp = "  ";
+	temp[0] = (value >> 8) & 0xff
+	temp[1] = value & 0xff
+	EncodeString( temp )
+}
+routine Archive::EncodeInt32( value: int )
+{
+	temp = "    ";
+	temp[0] = (value >> 24) & 0xff
+	temp[1] = (value >> 16) & 0xff
+	temp[2] = (value >> 8) & 0xff
+	temp[3] = value & 0xff
+	EncodeString( temp )
+}
+routine Archive::EncodeString( data: string )
+{
+	buffers.append( data )
+}
+
+routine Archive::EncodeFile( entry: fs::file, depth = 1 )
+{
+	if( depth > 0xff ) std::error( "Directory depth higher than 255" )
+
+	access = entry.access
+
+	#io.writeln( "Encoding:", entry.path )
+
+	EncodeInt8( 0xF )
+	EncodeInt8( depth )
+	EncodeInt8( EncodeAccess( access.user ) )
+	EncodeInt8( EncodeAccess( access.group ) )
+	EncodeInt8( EncodeAccess( access.other ) )
+	EncodeString( entry.name )
+	EncodeInt8( 0x0 )
+	EncodeInt32( entry.size )
+
+	EncodeString( io::read( entry.path ) )
+}
+routine Archive::EncodeDir( entry: fs::dir, depth = 1 )
+{
+	if( depth > 0xff ) std::error( "Directory depth higher than 255" )
+
+	access = entry.access
+
+	EncodeInt8( 0xD )
+	EncodeInt8( depth )
+	EncodeInt8( EncodeAccess( access.user ) )
+	EncodeInt8( EncodeAccess( access.group ) )
+	EncodeInt8( EncodeAccess( access.other ) )
+	EncodeString( entry.name )
+	EncodeInt8( 0x0 )
+
+	entry.files().iterate { EncodeFile( X, depth + 1 ) }
+	entry.dirs().iterate { EncodeDir( X, depth + 1 ) }
+}
+routine Archive::AddFile( path: string, depth = 1 )
+{
+	EncodeFile( fs::file( path ), depth )
+}
+routine Archive::AddDir( path: string, depth = 1 )
+{
+	EncodeDir( fs::dir( path ), depth )
+}
+routine Archive::Add( path: string )
+{
+	if( not fs::exists( path ) ) std::error( "Path not exist: " + path )
+
+	tops.append( path )
+
+	entry = fs::entry( path )
+	switch( entry.kind ){
+	case $file: AddFile( path )
+	case $dir : AddDir( path )
+	}
+}
+
+
+static routine Archive::Extract( buffer: string, dest: string )
+{
+	if( fs::exists( dest ) ) std::error( "Path already exist: " + dest )
+	if( buffer.find( dao_zip_header ) != 0 ) return std::error( "invalid Dao zip achive" );
+
+	dir = fs::cwd()
+	access = ( user = "", group = "", other = "" )
+
+	offset = % dao_zip_header
+	length = % buffer
+
+	if( offset+4 > length ) return std::error( "invalid Dao zip achive" );
+	B1 = buffer[offset+0]
+	B2 = buffer[offset+1]
+	B3 = buffer[offset+2]
+	B4 = buffer[offset+3]
+	count = (B1<<24) | (B2<<16) | (B3<<8) | B4
+
+	offset += 4
+	entryStack = { dir.mkdir( dest ) }
+	while( offset < length ){
+		if( (offset + 5) >= length ) std::error( "Invalid archive" )
+		nullchar = buffer.find( "\0", offset + 5 )
+		if( nullchar < 0 ) std::error( "Invalid archive" )
+		etype = buffer[offset]
+		depth = buffer[offset+1]
+		user = buffer[offset+2]
+		group = buffer[offset+3]
+		other = buffer[offset+4]
+		name = buffer[ offset+5 : nullchar ]
+		offset = nullchar + 1
+		access.user = DecodeAccess( user )
+		access.group = DecodeAccess( group )
+		access.other = DecodeAccess( other )
+		while( depth < % entryStack ) entryStack.pop()
+		if( etype == 0xF ){
+			if( (offset + 4) >= length ) std::error( "Invalid archive" )
+			B1 = buffer[offset+0]
+			B2 = buffer[offset+1]
+			B3 = buffer[offset+2]
+			B4 = buffer[offset+3]
+			len = (B1<<24) | (B2<<16) | (B3<<8) | B4
+			entry = entryStack.back().mkfile( name )
+			entry.access = access
+			fout = io::open( entry.path, "w" )
+			fout.writef( "%s", buffer[offset+4:offset+3+len] )
+			fout.close()
+			offset += 4 + len
+		}else if( etype == 0xD ){
+			entry = entryStack.back()
+			if( count > 1 or depth > 1 ) entry = entry.mkdir( name )
+			entry.access = access
+			entryStack.push( entry )
+		}else{
+			std::error( "Invalid archive" )
+		}
+	}
+}
